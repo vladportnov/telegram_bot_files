@@ -6,6 +6,9 @@ from aiogram.contrib.middlewares.logging import LoggingMiddleware
 from dotenv import load_dotenv
 import os
 import json
+from aiogram.dispatcher import FSMContext
+from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram.dispatcher.filters import Text
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -43,13 +46,18 @@ async def cmd_start(message: types.Message):
     # Проверяем, если пользователь уже авторизован
     if user_id in [user['id'] for user in authorized_users]:
         await message.reply("Добро пожаловать в бот! Для начала работы, выбери нужный филиал.")
+        await send_branch_options(message)  # Отправляем кнопки выбора филиала
     else:
         await message.reply("🚨Для работы с ботом необходимо указать вашу Фамилию и Имя")
         # Ожидаем фамилию и имя
-        await dp.register_message_handler(handle_name, state=None)
+        await dp.register_message_handler(handle_name, state="*")
+
+# Класс для состояния пользователя
+class UserForm(StatesGroup):
+    name = State()
 
 # Обработка фамилии и имени
-async def handle_name(message: types.Message):
+async def handle_name(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     user_name = message.text.strip()
     authorized_users = load_authorized_users()
@@ -72,6 +80,9 @@ async def handle_name(message: types.Message):
     })
     save_authorized_users(authorized_users)
 
+    # Переход к следующему состоянию
+    await state.finish()
+
 # Обработчик подтверждения владельцем
 @dp.message_handler(lambda message: message.text == 'Подтвердить✅')
 async def confirm_access(message: types.Message):
@@ -83,6 +94,7 @@ async def confirm_access(message: types.Message):
             save_authorized_users(authorized_users)
             await bot.send_message(user_id, "Вы можете работать с ботом!😉")
             await bot.send_message(OWNER_ID, f"Доступ для {user['name']} подтвержден!")
+            await send_branch_options(message)  # Отправляем кнопки выбора филиала после подтверждения
 
 # Обработчик отклонения владельцем
 @dp.message_handler(lambda message: message.text == 'Отклонить❌')
@@ -95,6 +107,14 @@ async def deny_access(message: types.Message):
             save_authorized_users(authorized_users)
             await bot.send_message(user_id, "Доступ к боту закрыт!⛔")
             await bot.send_message(OWNER_ID, f"Доступ для {user['name']} отклонен!")
+
+# Функция для отправки кнопок выбора филиала
+async def send_branch_options(message: types.Message):
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.add(types.KeyboardButton("Филиал 1"), types.KeyboardButton("Филиал 2"))
+    keyboard.add(types.KeyboardButton("Филиал 3"))
+    
+    await message.reply("Выберите филиал для работы с ботом:", reply_markup=keyboard)
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)
